@@ -1,4 +1,4 @@
-package server
+package rootfs
 
 import (
 	"fmt"
@@ -13,7 +13,7 @@ import (
 type eventuallyFunc func() error
 
 func TestServerNoContentOpsAbort(t *testing.T) {
-	testWithStopType(t, func(client TestClient) {
+	testWithStopType(t, func(client ClientProvider) {
 		client.Abort(fmt.Errorf("aborted"))
 	}, func(server TestServer) eventuallyFunc {
 		return func() error {
@@ -26,7 +26,7 @@ func TestServerNoContentOpsAbort(t *testing.T) {
 }
 
 func TestServerNoContentOpsSuccess(t *testing.T) {
-	testWithStopType(t, func(client TestClient) {
+	testWithStopType(t, func(client ClientProvider) {
 		client.Success()
 	}, func(server TestServer) eventuallyFunc {
 		return func() error {
@@ -38,7 +38,7 @@ func TestServerNoContentOpsSuccess(t *testing.T) {
 	})
 }
 
-func testWithStopType(t *testing.T, stopTrigger func(TestClient), eventuallyCond func(TestServer) eventuallyFunc) {
+func testWithStopType(t *testing.T, stopTrigger func(ClientProvider), eventuallyCond func(TestServer) eventuallyFunc) {
 	logger := hclog.Default()
 	logger.SetLevel(hclog.Debug)
 

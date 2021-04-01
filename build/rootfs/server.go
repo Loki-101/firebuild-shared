@@ -1,4 +1,4 @@
-package server
+package rootfs
 
 import (
 	"crypto/tls"
@@ -68,8 +68,8 @@ func (c *GRPCServiceConfig) WithDefaultsApplied() *GRPCServiceConfig {
 	return c
 }
 
-// Provider defines a GRPC server behaviour.
-type Provider interface {
+// ProviderServer defines a GRPC server behaviour.
+type ProviderServer interface {
 	EventProvider
 	// Starts the server with a given work context.
 	Start(serverCtx *WorkContext)
@@ -110,7 +110,7 @@ type grpcSvc struct {
 }
 
 // New returns a new instance of the server.
-func New(cfg *GRPCServiceConfig, logger hclog.Logger) Provider {
+func New(cfg *GRPCServiceConfig, logger hclog.Logger) ProviderServer {
 	return &grpcSvc{
 		config:      cfg.WithDefaultsApplied(),
 		logger:      logger,
