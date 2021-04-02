@@ -94,7 +94,7 @@ func (drr *grpcDirectoryResource) WalkResource() chan *proto.ResourceChunk {
 						SourcePath:    filepath.Join(drr.sourcePath, remainingPath),
 						TargetPath:    filepath.Join(drr.targetPath, remainingPath),
 						FileMode:      int64(finfo.Mode().Perm()),
-						IsDir:         true,
+						IsDir:         false,
 						TargetUser:    drr.targetUser.Value,
 						TargetWorkdir: drr.targetWorkdir.Value,
 						Id:            resourceUUID,
