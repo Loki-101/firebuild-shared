@@ -9,3 +9,4 @@ This repository contains shared `firebuild` components.
 - shared test utilities
 - Docker build commands
 - resource resolution resources
+- environment expansion utilities
