@@ -19,6 +19,7 @@ const _ = grpc.SupportPackageIsVersion7
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type RootfsServerClient interface {
 	Commands(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*CommandsResponse, error)
+	Ping(ctx context.Context, in *PingRequest, opts ...grpc.CallOption) (*PingResponse, error)
 	Resource(ctx context.Context, in *ResourceRequest, opts ...grpc.CallOption) (RootfsServer_ResourceClient, error)
 	StdErr(ctx context.Context, in *LogMessage, opts ...grpc.CallOption) (*Empty, error)
 	StdOut(ctx context.Context, in *LogMessage, opts ...grpc.CallOption) (*Empty, error)
@@ -37,6 +38,15 @@ func NewRootfsServerClient(cc grpc.ClientConnInterface) RootfsServerClient {
 func (c *rootfsServerClient) Commands(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*CommandsResponse, error) {
 	out := new(CommandsResponse)
 	err := c.cc.Invoke(ctx, "/proto.RootfsServer/Commands", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *rootfsServerClient) Ping(ctx context.Context, in *PingRequest, opts ...grpc.CallOption) (*PingResponse, error) {
+	out := new(PingResponse)
+	err := c.cc.Invoke(ctx, "/proto.RootfsServer/Ping", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -116,6 +126,7 @@ func (c *rootfsServerClient) Success(ctx context.Context, in *Empty, opts ...grp
 // for forward compatibility
 type RootfsServerServer interface {
 	Commands(context.Context, *Empty) (*CommandsResponse, error)
+	Ping(context.Context, *PingRequest) (*PingResponse, error)
 	Resource(*ResourceRequest, RootfsServer_ResourceServer) error
 	StdErr(context.Context, *LogMessage) (*Empty, error)
 	StdOut(context.Context, *LogMessage) (*Empty, error)
@@ -129,6 +140,9 @@ type UnimplementedRootfsServerServer struct {
 
 func (UnimplementedRootfsServerServer) Commands(context.Context, *Empty) (*CommandsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Commands not implemented")
+}
+func (UnimplementedRootfsServerServer) Ping(context.Context, *PingRequest) (*PingResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Ping not implemented")
 }
 func (UnimplementedRootfsServerServer) Resource(*ResourceRequest, RootfsServer_ResourceServer) error {
 	return status.Errorf(codes.Unimplemented, "method Resource not implemented")
@@ -171,6 +185,24 @@ func _RootfsServer_Commands_Handler(srv interface{}, ctx context.Context, dec fu
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(RootfsServerServer).Commands(ctx, req.(*Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _RootfsServer_Ping_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PingRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RootfsServerServer).Ping(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/proto.RootfsServer/Ping",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RootfsServerServer).Ping(ctx, req.(*PingRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -278,6 +310,10 @@ var RootfsServer_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Commands",
 			Handler:    _RootfsServer_Commands_Handler,
+		},
+		{
+			MethodName: "Ping",
+			Handler:    _RootfsServer_Ping_Handler,
 		},
 		{
 			MethodName: "StdErr",

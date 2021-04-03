@@ -17,10 +17,7 @@ import (
 // EventProvider provides the event subsriptions to the server executor.
 // When client event occurs, a corresponding event will be sent via one of the channels.
 type EventProvider interface {
-	OnAbort() <-chan error
-	OnStderr() <-chan string
-	OnStdout() <-chan string
-	OnSuccess() <-chan struct{}
+	OnMessage() <-chan interface{}
 }
 
 type serverImplInterface interface {
@@ -37,10 +34,7 @@ type serverImpl struct {
 	serviceConfig *GRPCServiceConfig
 	serverCtx     *WorkContext
 
-	chanAbort   chan error
-	chanStderr  chan string
-	chanStdout  chan string
-	chanSuccess chan struct{}
+	chanMessages chan interface{}
 }
 
 func newServerImpl(logger hclog.Logger, serverCtx *WorkContext, serviceConfig *GRPCServiceConfig) serverImplInterface {
@@ -49,31 +43,37 @@ func newServerImpl(logger hclog.Logger, serverCtx *WorkContext, serviceConfig *G
 		logger:        logger,
 		serviceConfig: serviceConfig,
 		serverCtx:     serverCtx,
-		chanAbort:     make(chan error, 1),
-		chanStderr:    make(chan string),
-		chanStdout:    make(chan string),
-		chanSuccess:   make(chan struct{}),
+		chanMessages:  make(chan interface{}),
 	}
 }
 
 func (impl *serverImpl) Abort(ctx context.Context, req *proto.AbortRequest) (*proto.Empty, error) {
+	// handle stopped server
 	impl.m.Lock()
 	if impl.stopped {
 		defer impl.m.Unlock()
-		return &proto.Empty{}, nil
+		return &proto.Empty{}, fmt.Errorf("stopped")
 	}
 	impl.m.Unlock()
 
-	impl.chanAbort <- errors.New(req.Error)
+	impl.chanMessages <- &ClientMsgAborted{Error: errors.New(req.Error)}
 	return &proto.Empty{}, nil
 }
 
 func (impl *serverImpl) Commands(ctx context.Context, _ *proto.Empty) (*proto.CommandsResponse, error) {
+	// handle stopped server
+	impl.m.Lock()
+	if impl.stopped {
+		defer impl.m.Unlock()
+		return &proto.CommandsResponse{Command: []string{}}, fmt.Errorf("stopped")
+	}
+	impl.m.Unlock()
+
+	impl.chanMessages <- &ControlMsgCommandsRequested{}
 	response := &proto.CommandsResponse{Command: []string{}}
 	for _, cmd := range impl.serverCtx.ExecutableCommands {
 		commandBytes, err := json.Marshal(cmd)
 		if err != nil {
-			impl.chanAbort <- err
 			return response, err
 		}
 		response.Command = append(response.Command, string(commandBytes))
@@ -81,7 +81,28 @@ func (impl *serverImpl) Commands(ctx context.Context, _ *proto.Empty) (*proto.Co
 	return response, nil
 }
 
+func (impl *serverImpl) Ping(ctx context.Context, req *proto.PingRequest) (*proto.PingResponse, error) {
+	// handle stopped server
+	impl.m.Lock()
+	if impl.stopped {
+		defer impl.m.Unlock()
+		return &proto.PingResponse{Id: ""}, fmt.Errorf("stopped")
+	}
+	impl.m.Unlock()
+
+	impl.chanMessages <- &ControlMsgPingSent{}
+	return &proto.PingResponse{Id: req.Id}, nil
+}
+
 func (impl *serverImpl) Resource(req *proto.ResourceRequest, stream proto.RootfsServer_ResourceServer) error {
+	// handle stopped server
+	impl.m.Lock()
+	if impl.stopped {
+		defer impl.m.Unlock()
+		return fmt.Errorf("stopped")
+	}
+	impl.m.Unlock()
+
 	if ress, ok := impl.serverCtx.ResourcesResolved[req.Path]; ok {
 		for _, resource := range ress {
 
@@ -158,30 +179,28 @@ func (impl *serverImpl) Resource(req *proto.ResourceRequest, stream proto.Rootfs
 }
 
 func (impl *serverImpl) StdErr(ctx context.Context, req *proto.LogMessage) (*proto.Empty, error) {
+	// handle stopped server
 	impl.m.Lock()
 	if impl.stopped {
 		defer impl.m.Unlock()
-		return &proto.Empty{}, nil
+		return &proto.Empty{}, fmt.Errorf("stopped")
 	}
 	impl.m.Unlock()
 
-	for _, line := range req.Line {
-		impl.chanStderr <- line
-	}
+	impl.chanMessages <- &ClientMsgStderr{Lines: req.Line}
 	return &proto.Empty{}, nil
 }
 
 func (impl *serverImpl) StdOut(ctx context.Context, req *proto.LogMessage) (*proto.Empty, error) {
+	// handle stopped server
 	impl.m.Lock()
 	if impl.stopped {
 		defer impl.m.Unlock()
-		return &proto.Empty{}, nil
+		return &proto.Empty{}, fmt.Errorf("stopped")
 	}
 	impl.m.Unlock()
 
-	for _, line := range req.Line {
-		impl.chanStdout <- line
-	}
+	impl.chanMessages <- &ClientMsgStdout{Lines: req.Line}
 	return &proto.Empty{}, nil
 }
 
@@ -191,31 +210,24 @@ func (impl *serverImpl) Stop() {
 		impl.m.Unlock()
 		return
 	}
+
 	impl.stopped = true
 	impl.m.Unlock()
 }
 
 func (impl *serverImpl) Success(ctx context.Context, _ *proto.Empty) (*proto.Empty, error) {
+	// handle stopped server
 	impl.m.Lock()
 	if impl.stopped {
 		defer impl.m.Unlock()
-		return &proto.Empty{}, nil
+		return &proto.Empty{}, fmt.Errorf("stopped")
 	}
 	impl.m.Unlock()
 
-	close(impl.chanSuccess)
+	impl.chanMessages <- &ClientMsgSuccess{}
 	return &proto.Empty{}, nil
 }
 
-func (impl *serverImpl) OnAbort() <-chan error {
-	return impl.chanAbort
-}
-func (impl *serverImpl) OnStderr() <-chan string {
-	return impl.chanStderr
-}
-func (impl *serverImpl) OnStdout() <-chan string {
-	return impl.chanStdout
-}
-func (impl *serverImpl) OnSuccess() <-chan struct{} {
-	return impl.chanSuccess
+func (impl *serverImpl) OnMessage() <-chan interface{} {
+	return impl.chanMessages
 }

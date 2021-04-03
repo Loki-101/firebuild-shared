@@ -68,8 +68,8 @@ func (c *GRPCServiceConfig) WithDefaultsApplied() *GRPCServiceConfig {
 	return c
 }
 
-// ProviderServer defines a GRPC server behaviour.
-type ProviderServer interface {
+// ServerProvider defines a GRPC server behaviour.
+type ServerProvider interface {
 	EventProvider
 	// Starts the server with a given work context.
 	Start(serverCtx *WorkContext)
@@ -110,7 +110,7 @@ type grpcSvc struct {
 }
 
 // New returns a new instance of the server.
-func New(cfg *GRPCServiceConfig, logger hclog.Logger) ProviderServer {
+func New(cfg *GRPCServiceConfig, logger hclog.Logger) ServerProvider {
 	return &grpcSvc{
 		config:      cfg.WithDefaultsApplied(),
 		logger:      logger,
@@ -288,17 +288,8 @@ func (s *grpcSvc) Stop() {
 
 }
 
-func (s *grpcSvc) OnAbort() <-chan error {
-	return s.svc.OnAbort()
-}
-func (s *grpcSvc) OnStderr() <-chan string {
-	return s.svc.OnStderr()
-}
-func (s *grpcSvc) OnStdout() <-chan string {
-	return s.svc.OnStdout()
-}
-func (s *grpcSvc) OnSuccess() <-chan struct{} {
-	return s.svc.OnSuccess()
+func (s *grpcSvc) OnMessage() <-chan interface{} {
+	return s.svc.OnMessage()
 }
 
 // ReadyNotify returns a channel that will be closed when the server is ready to serve client requests.

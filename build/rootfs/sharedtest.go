@@ -16,13 +16,14 @@ type TestServer interface {
 	ReadyNotify() <-chan struct{}
 
 	Aborted() error
-	ConsumedStderr() []string
-	ConsumedStdout() []string
+	ClientRequestedCommands() bool
+	ReceivedStderr() []string
+	ReceivedStdout() []string
 	Succeeded() bool
 }
 
-// NewTest starts a new test server provider.
-func NewTestServer(t *testing.T, logger hclog.Logger, cfg *GRPCServiceConfig, ctx *WorkContext) *testGRPCServerProvider {
+// NewTestServer starts a new test server provider.
+func NewTestServer(t *testing.T, logger hclog.Logger, cfg *GRPCServiceConfig, ctx *WorkContext) TestServer {
 	return &testGRPCServerProvider{
 		cfg:          cfg,
 		ctx:          ctx,
@@ -39,14 +40,15 @@ func NewTestServer(t *testing.T, logger hclog.Logger, cfg *GRPCServiceConfig, ct
 type testGRPCServerProvider struct {
 	cfg *GRPCServiceConfig
 	ctx *WorkContext
-	srv ProviderServer
+	srv ServerProvider
 
 	logger hclog.Logger
 
-	abortError   error
-	stdErrOutput []string
-	stdOutOutput []string
-	success      bool
+	abortError              error
+	clientRequestedCommands bool
+	stdErrOutput            []string
+	stdOutOutput            []string
+	success                 bool
 
 	chanAborted  chan struct{}
 	chanFailed   chan error
@@ -76,27 +78,28 @@ func (p *testGRPCServerProvider) Start() {
 			case <-p.srv.StoppedNotify():
 				close(p.chanFinished)
 				break out
-			case stdErrLine := <-p.srv.OnStderr():
-				if stdErrLine == "" {
-					continue
+
+			case message := <-p.srv.OnMessage():
+				switch tmessage := message.(type) {
+				case *ClientMsgAborted:
+					p.abortError = tmessage.Error
+					close(p.chanAborted)
+				case *ClientMsgSuccess:
+					if p.success {
+						continue out
+					}
+					p.success = true
+					go func() {
+						p.srv.Stop()
+					}()
+				case *ClientMsgStderr:
+					p.stdErrOutput = append(p.stdErrOutput, tmessage.Lines...)
+				case *ClientMsgStdout:
+					p.stdOutOutput = append(p.stdOutOutput, tmessage.Lines...)
+				case *ControlMsgCommandsRequested:
+					p.clientRequestedCommands = true
 				}
-				p.stdErrOutput = append(p.stdErrOutput, stdErrLine)
-			case stdOutLine := <-p.srv.OnStdout():
-				if stdOutLine == "" {
-					continue
-				}
-				p.stdOutOutput = append(p.stdOutOutput, stdOutLine)
-			case outErr := <-p.srv.OnAbort():
-				p.abortError = outErr
-				close(p.chanAborted)
-			case <-p.srv.OnSuccess():
-				if p.success {
-					continue
-				}
-				p.success = true
-				go func() {
-					p.srv.Stop()
-				}()
+
 			case <-p.chanAborted:
 				if p.isAbortedClosed {
 					continue
@@ -132,15 +135,27 @@ func (p *testGRPCServerProvider) ReadyNotify() <-chan struct{} {
 	return p.chanReady
 }
 
+// Aborted returns the abort error, if client aborted.
 func (p *testGRPCServerProvider) Aborted() error {
 	return p.abortError
 }
-func (p *testGRPCServerProvider) ConsumedStderr() []string {
+
+// ClientRequestedCommands returns true is the client requested messages from the server at least once.
+func (p *testGRPCServerProvider) ClientRequestedCommands() bool {
+	return p.clientRequestedCommands
+}
+
+// ReceivedStderr returns stderr received from the client.
+func (p *testGRPCServerProvider) ReceivedStderr() []string {
 	return p.stdErrOutput
 }
-func (p *testGRPCServerProvider) ConsumedStdout() []string {
+
+// ReceivedStderr returns stdout received from the client.
+func (p *testGRPCServerProvider) ReceivedStdout() []string {
 	return p.stdOutOutput
 }
+
+// Succeeded returns true if the client finished successfully.
 func (p *testGRPCServerProvider) Succeeded() bool {
 	return p.success
 }

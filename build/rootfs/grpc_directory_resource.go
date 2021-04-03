@@ -16,11 +16,14 @@ import (
 	"github.com/gofrs/uuid"
 )
 
+// GRPCReadingDirectoryResource identifies a gRPC walkable directory resource.
 type GRPCReadingDirectoryResource interface {
 	WalkResource() chan *proto.ResourceChunk
 }
 
-// NewResolvedDirectoryResourceWithPath creates a resolved resource from input information containing resource source path.
+// NewGRPCDirectoryResource creates a resolved walkable gRPC directory resource.
+// This special resource type walks an underlying directory and produces resource entries for every directory and a file within
+// the underlying directory. In a sense, it behaves similar to an SCP client but operates via gRPC.
 func NewGRPCDirectoryResource(safeBufferSize int, resource resources.ResolvedResource) GRPCReadingDirectoryResource {
 	return &grpcDirectoryResource{contentsReader: func() (io.ReadCloser, error) {
 		return ioutil.NopCloser(bytes.NewReader([]byte{})), nil

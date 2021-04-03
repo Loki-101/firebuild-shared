@@ -5,6 +5,7 @@ import (
 	"strings"
 )
 
+// VMInitSerializableCommand identifies a message which can be sent via server Commands response.
 type VMInitSerializableCommand interface{}
 
 // DockerfileSerializable identifies a command originating from a Docker environment: file or image.
