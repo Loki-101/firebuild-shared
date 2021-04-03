@@ -22,3 +22,23 @@ func TestBuildEnv(t *testing.T) {
 	assert.Equal(t, output, expected)
 
 }
+
+func TestCustomExpanderHandlesAwkCommand(t *testing.T) {
+
+	buildEnv := NewBuildEnv()
+
+	// while os.Expand with a mapper would have to make a choice to either wrap with {} or not
+	// to be on the safe side, use custom expander so we always preserve the state of {} after $
+	// this is something the system os.Expand is not capable of
+
+	// here, the input $NF has no surrounding {}
+	expected := "dpkgArch=\"$(dpkg --print-architecture | awk -F- '{ print $NF }')\";"
+	output := buildEnv.Expand(expected)
+	assert.Equal(t, output, expected)
+
+	// bu here it does, we want to preserve that:
+	expected2 := "apkArch=\"$(apk --print-arch)\" && case \"${apkArch:-abc}\""
+	output2 := buildEnv.Expand(expected2)
+	assert.Equal(t, output2, expected2)
+
+}

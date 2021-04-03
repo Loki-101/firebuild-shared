@@ -1,10 +1,5 @@
 package env
 
-import (
-	"fmt"
-	"os"
-)
-
 // BuildEnv is a build time environment representation.
 type BuildEnv interface {
 	Expand(string) string
@@ -22,14 +17,7 @@ type defaultBuildEnv struct {
 }
 
 func (exp *defaultBuildEnv) Expand(value string) string {
-	return os.Expand(value, exp.expandMapper)
-}
-
-func (exp *defaultBuildEnv) expandMapper(key string) string {
-	if value, ok := exp.env[key]; ok {
-		return value
-	}
-	return fmt.Sprintf("${%s}", key)
+	return expand(value, exp.lookup)
 }
 
 func (exp *defaultBuildEnv) lookup(key string) (string, bool) {
