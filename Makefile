@@ -8,6 +8,10 @@ genproto:
 			--go-grpc_opt=require_unimplemented_servers=false \
 		./grpc/proto/rootfs_server.proto
 
+.PHONY: lint
+lint:
+	golint ./...
+
 .PHONY: prototools
 prototools:
 	go get -u github.com/golang/protobuf/proto \

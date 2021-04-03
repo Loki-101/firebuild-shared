@@ -17,6 +17,14 @@ message LogMessage {
     repeated string line = 1;
 }
 
+message PingRequest {
+    string id = 1;
+}
+
+message PingResponse {
+    string id = 1;
+}
+
 message ResourceRequest {
     string path = 1;
     string stage = 2;
@@ -53,6 +61,7 @@ message ResourceChunk {
 service RootfsServer {
 
     rpc Commands(Empty) returns (CommandsResponse);
+    rpc Ping(PingRequest) returns (PingResponse);
     rpc Resource(ResourceRequest) returns (stream ResourceChunk);
 
     rpc StdErr(LogMessage) returns (Empty);

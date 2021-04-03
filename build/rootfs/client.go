@@ -14,6 +14,7 @@ import (
 
 	"github.com/combust-labs/firebuild-shared/build/commands"
 	"github.com/combust-labs/firebuild-shared/grpc/proto"
+	"github.com/gofrs/uuid"
 	"github.com/hashicorp/go-hclog"
 	"github.com/mitchellh/mapstructure"
 	"github.com/pkg/errors"
@@ -21,25 +22,54 @@ import (
 	"google.golang.org/grpc/credentials"
 )
 
+// ClientProvider defines a GRPC client behaviour.
 type ClientProvider interface {
+	// Abort aborts the client with error.
 	Abort(error) error
+	// Commands requests the processable commands from the server.
 	Commands() error
+	// NextCommand returns the next command to process, Commands() must be called first.
 	NextCommand() commands.VMInitSerializableCommand
+	// Ping sends a ping message to the server, if the response ID does not match, returns an error.
+	Ping() error
+	// Resource loads the resource identified by a path from the server.
 	Resource(string) (chan interface{}, error)
+	// StdErr sends stderr lines to the server.
 	StdErr([]string) error
+	// StdOut sends stdout lines to the server.
 	StdOut([]string) error
+	// Success finishes the client with success.
 	Success() error
 }
 
+// GRPCClientConfig is the client configuration.
 type GRPCClientConfig struct {
-	HostPort       string
-	TLSConfig      *tls.Config
+	// HostPort to connect to.
+	HostPort string
+	// TLSConfig is the optional TLS configuration to use when connecting to the server.
+	TLSConfig *tls.Config
+	// MaxRecvMsgSize is the maximum message size the client can safely handle.
 	MaxRecvMsgSize int
 }
 
+// SafeClientMaxRecvMsgSize returns the maximum safe payload size to send by the client.
+func (c *GRPCClientConfig) SafeClientMaxRecvMsgSize() int {
+	return int(float32(c.MaxRecvMsgSize) * 0.9)
+}
+
+// WithDefaultsApplied applies default configuration values to unconfigured properties.
+func (c *GRPCClientConfig) WithDefaultsApplied() *GRPCClientConfig {
+	if c.MaxRecvMsgSize == 0 {
+		c.MaxRecvMsgSize = DefaultMaxRecvMsgSize
+	}
+	return c
+}
+
+// NewClient returns a new default client provider implementation.
 func NewClient(logger hclog.Logger, cfg *GRPCClientConfig) (ClientProvider, error) {
+	cfg = cfg.WithDefaultsApplied()
 	grpcConn, err := grpc.Dial(cfg.HostPort,
-		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(cfg.MaxRecvMsgSize)),
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(cfg.SafeClientMaxRecvMsgSize())),
 		grpc.WithTransportCredentials(credentials.NewTLS(cfg.TLSConfig)))
 
 	if err != nil {
@@ -55,6 +85,13 @@ type defaultClient struct {
 	underlying      proto.RootfsServerClient
 }
 
+// Abort aborts the client with error.
+func (c *defaultClient) Abort(input error) error {
+	_, err := c.underlying.Abort(context.Background(), &proto.AbortRequest{Error: input.Error()})
+	return err
+}
+
+// Commands requests the processable commands from the server.
 func (c *defaultClient) Commands() error {
 	c.fetchedCommands = []commands.VMInitSerializableCommand{}
 	response, err := c.underlying.Commands(context.Background(), &proto.Empty{})
@@ -94,6 +131,7 @@ func (c *defaultClient) Commands() error {
 	return nil
 }
 
+// NextCommand returns the next command to process, Commands() must be called first.
 func (c *defaultClient) NextCommand() commands.VMInitSerializableCommand {
 	if len(c.fetchedCommands) == 0 {
 		return nil
@@ -107,6 +145,20 @@ func (c *defaultClient) NextCommand() commands.VMInitSerializableCommand {
 	return result
 }
 
+// Ping sends a ping message to the server, if the response ID does not match, returns an error.
+func (c *defaultClient) Ping() error {
+	pingID := uuid.Must(uuid.NewV4()).String()
+	response, err := c.underlying.Ping(context.Background(), &proto.PingRequest{Id: pingID})
+	if err != nil {
+		return err
+	}
+	if response.Id != pingID {
+		return fmt.Errorf("ping response invalid")
+	}
+	return nil
+}
+
+// Resource loads the resource identified by a path from the server.
 func (c *defaultClient) Resource(input string) (chan interface{}, error) {
 
 	chanResources := make(chan interface{})
@@ -166,18 +218,19 @@ func (c *defaultClient) Resource(input string) (chan interface{}, error) {
 	return chanResources, nil
 }
 
+// StdErr sends stderr lines to the server.
 func (c *defaultClient) StdErr(input []string) error {
 	_, err := c.underlying.StdErr(context.Background(), &proto.LogMessage{Line: input})
 	return err
 }
+
+// StdOut sends stdout lines to the server.
 func (c *defaultClient) StdOut(input []string) error {
 	_, err := c.underlying.StdOut(context.Background(), &proto.LogMessage{Line: input})
 	return err
 }
-func (c *defaultClient) Abort(input error) error {
-	_, err := c.underlying.Abort(context.Background(), &proto.AbortRequest{Error: input.Error()})
-	return err
-}
+
+// Success finishes the client with success.
 func (c *defaultClient) Success() error {
 	_, err := c.underlying.Success(context.Background(), &proto.Empty{})
 	return err
@@ -211,8 +264,8 @@ func (r *grpcResolvedResource) ResolvedURIOrPath() string {
 func (r *grpcResolvedResource) SourcePath() string {
 	return r.sourcePath
 }
-func (drr *grpcResolvedResource) TargetMode() fs.FileMode {
-	return drr.targetMode
+func (r *grpcResolvedResource) TargetMode() fs.FileMode {
+	return r.targetMode
 }
 func (r *grpcResolvedResource) TargetPath() string {
 	return r.targetPath

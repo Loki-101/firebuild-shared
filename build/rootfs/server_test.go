@@ -50,6 +50,9 @@ func testWithStopType(t *testing.T, stopTrigger func(ClientProvider), eventually
 	testServer, testClient, cleanupFunc := MustStartTestGRPCServer(t, logger, buildCtx)
 	defer cleanupFunc()
 
+	assert.Nil(t, testClient.Commands())
+	assert.Nil(t, testClient.Ping())
+
 	expectedStderrLines := []string{"stderr line", "stderr line 2"}
 	expectedStdoutLines := []string{"stdout line", "stdout line 2"}
 
@@ -64,7 +67,8 @@ func testWithStopType(t *testing.T, stopTrigger func(ClientProvider), eventually
 
 	utilstest.MustEventuallyWithDefaults(t, eventuallyCond(testServer))
 
-	assert.Equal(t, expectedStderrLines, testServer.ConsumedStderr())
-	assert.Equal(t, expectedStdoutLines, testServer.ConsumedStdout())
+	assert.True(t, testServer.ClientRequestedCommands())
+	assert.Equal(t, expectedStderrLines, testServer.ReceivedStderr())
+	assert.Equal(t, expectedStdoutLines, testServer.ReceivedStdout())
 
 }
