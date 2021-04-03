@@ -276,11 +276,12 @@ func DefaultWorkdir() Workdir {
 // RunWithDefaults returns a Run for a given command with defaults.
 func RunWithDefaults(command string) Run {
 	return Run{
-		Args:    map[string]string{},
-		Env:     map[string]string{},
-		Command: command,
-		Shell:   DefaultShell(),
-		User:    DefaultUser(),
-		Workdir: DefaultWorkdir(),
+		OriginalCommand: fmt.Sprintf("RUN %s", command),
+		Args:            map[string]string{},
+		Env:             map[string]string{},
+		Command:         command,
+		Shell:           DefaultShell(),
+		User:            DefaultUser(),
+		Workdir:         DefaultWorkdir(),
 	}
 }
