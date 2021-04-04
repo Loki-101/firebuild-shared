@@ -111,26 +111,29 @@ func (impl *serverImpl) Resource(req *proto.ResourceRequest, stream proto.Rootfs
 				return err
 			}
 
-			// make it a little bit smaller than the actual max size
-			safeBufSize := impl.serviceConfig.SafeClientMaxRecvMsgSize()
-
-			impl.logger.Debug("sending data with safe buffer size", "resource", resource.TargetPath(), "safe-buffer-size", safeBufSize)
+			impl.logger.Debug("sending resource data", "resource", resource.TargetPath())
 
 			if resource.IsDir() {
-				grpcDirResource := NewGRPCDirectoryResource(safeBufSize, resource)
+				// by using this safe value, we leave space for other fields of the payload
+				grpcDirResource := NewGRPCDirectoryResource(impl.serviceConfig.SafeClientMaxRecvMsgSize(), resource)
 				outputChannel := grpcDirResource.WalkResource()
 				for {
 					payload := <-outputChannel
 					if payload == nil {
 						break
 					}
-					stream.Send(payload)
+					sendErr := stream.Send(payload)
+					if sendErr != nil {
+						// TODO: requires server abort
+						impl.logger.Error("failed sending walk directory packet", "reason", sendErr)
+						return sendErr
+					}
 				}
 				continue
 			}
 
 			resourceUUID := uuid.Must(uuid.NewV4()).String()
-			stream.Send(&proto.ResourceChunk{
+			sendErr := stream.Send(&proto.ResourceChunk{
 				Payload: &proto.ResourceChunk_Header{
 					Header: &proto.ResourceChunk_ResourceHeader{
 						SourcePath:    resource.SourcePath(),
@@ -143,23 +146,35 @@ func (impl *serverImpl) Resource(req *proto.ResourceRequest, stream proto.Rootfs
 					},
 				},
 			})
+			if sendErr != nil {
+				// TODO: requires server abort
+				impl.logger.Error("Failed sending header", "reason", sendErr)
+				return sendErr
+			}
 
-			buffer := make([]byte, safeBufSize)
+			// by using this safe value, we leave space for other fields of the payload
+			buffer := make([]byte, impl.serviceConfig.SafeClientMaxRecvMsgSize())
+
 			for {
 				readBytes, err := reader.Read(buffer)
 				if readBytes == 0 && err == io.EOF {
-					stream.Send(&proto.ResourceChunk{
+					sendErr := stream.Send(&proto.ResourceChunk{
 						Payload: &proto.ResourceChunk_Eof{
 							Eof: &proto.ResourceChunk_ResourceEof{
 								Id: resourceUUID,
 							},
 						},
 					})
+					if sendErr != nil {
+						// TODO: requires server abort
+						impl.logger.Error("Failed sending eof", "reason", sendErr)
+						return sendErr
+					}
 					break
 				} else {
 					payload := buffer[0:readBytes]
 					hash := sha256.Sum256(payload)
-					stream.Send(&proto.ResourceChunk{
+					sendErr := stream.Send(&proto.ResourceChunk{
 						Payload: &proto.ResourceChunk_Chunk{
 							Chunk: &proto.ResourceChunk_ResourceContents{
 								Chunk:    payload,
@@ -168,6 +183,11 @@ func (impl *serverImpl) Resource(req *proto.ResourceRequest, stream proto.Rootfs
 							},
 						},
 					})
+					if sendErr != nil {
+						// TODO: requires server abort
+						impl.logger.Error("Failed sending chunk", "reason", sendErr)
+						return sendErr
+					}
 				}
 			}
 		}
