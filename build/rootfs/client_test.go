@@ -7,6 +7,8 @@ import (
 	"io"
 	"io/fs"
 	"io/ioutil"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -87,6 +89,79 @@ func TestClientHandlesLargeFiles(t *testing.T) {
 	assert.Nil(t, testClient.Success())
 
 	<-testServer.FinishedNotify()
+}
+
+func TestClientHandlesLargeFilesFromHTTP(t *testing.T) {
+
+	tempDir, err := ioutil.TempDir("", "")
+	assert.Nil(t, err)
+	defer os.RemoveAll(tempDir)
+
+	largeFileContent := getLargeFileContent(t, 10*1024*1024)
+
+	MustPutTestResource(t, filepath.Join(tempDir, "large-file"), []byte(largeFileContent))
+
+	httpHandler := &largeContentHTTPServer{
+		largeContent: largeFileContent,
+	}
+	httpServer := httptest.NewServer(httpHandler)
+	defer httpServer.Close()
+
+	largeFileHTTPAddress := fmt.Sprintf("%s/path/to/the/large-file", httpServer.URL)
+
+	httpContentSupplier := func() (io.ReadCloser, error) {
+		// we have the temp file:
+		httpResponse, err := http.Get(largeFileHTTPAddress)
+		if err != nil {
+			return nil, err
+		}
+		return httpResponse.Body, nil
+	}
+
+	logger := hclog.Default()
+	logger.SetLevel(hclog.Debug)
+	buildCtx := &WorkContext{
+		ExecutableCommands: []commands.VMInitSerializableCommand{
+			commands.Add{
+				OriginalCommand: fmt.Sprintf("ADD %s /etc/large-file", largeFileHTTPAddress),
+				OriginalSource:  largeFileHTTPAddress,
+				Source:          largeFileHTTPAddress,
+				Target:          "/etc/large-file",
+				User:            commands.DefaultUser(),
+				Workdir:         commands.Workdir{Value: tempDir},
+			},
+		},
+		ResourcesResolved: Resources{
+			largeFileHTTPAddress: []resources.ResolvedResource{
+				resources.NewResolvedFileResourceWithPath(httpContentSupplier,
+					fs.FileMode(0644),
+					largeFileHTTPAddress,
+					"/etc/large-file",
+					commands.Workdir{Value: tempDir},
+					commands.DefaultUser(),
+					largeFileHTTPAddress),
+			},
+		},
+	}
+
+	testServer, testClient, cleanupFunc := MustStartTestGRPCServer(t, logger, buildCtx)
+	defer cleanupFunc()
+
+	assert.Nil(t, testClient.Commands())
+
+	MustBeAddCommand(t, testClient, largeFileContent)
+
+	assert.Nil(t, testClient.Success())
+
+	<-testServer.FinishedNotify()
+}
+
+type largeContentHTTPServer struct {
+	largeContent []byte
+}
+
+func (s *largeContentHTTPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Write(s.largeContent)
 }
 
 func getLargeFileContent(t *testing.T, n int64) []byte {
