@@ -19,7 +19,7 @@ const (
 	// DefaultGracefulStopTimeoutMillis is the default graceful shutdown wait time.
 	DefaultGracefulStopTimeoutMillis = 10000
 	// DefaultMaxRecvMsgSize is the default max recv msg size for the GRPC server.
-	DefaultMaxRecvMsgSize = 4 * 1024 * 1024
+	DefaultMaxMsgSize = 4 * 1024 * 1024
 	// DefaultServerName is the default ServerName.
 	DefaultServerName = "localhost"
 )
@@ -36,7 +36,7 @@ type GRPCServiceConfig struct {
 	GracefulStopTimeoutMillis int
 	// MaxRecvMsgSize returns a ServerOption to set the max message size in bytes the server can receive.
 	// If this is not set, gRPC uses the default 4MB.
-	MaxRecvMsgSize int
+	MaxMsgSize int
 	// Identifies the GRPC server. This setting is required when doing mTLS.
 	ServerName string
 	// Contains the GRPC server configuration.
@@ -51,13 +51,13 @@ type GRPCServiceConfig struct {
 
 // SafeClientMaxRecvMsgSize returns the maximum safe payload size to send by the client.
 func (c *GRPCServiceConfig) SafeClientMaxRecvMsgSize() int {
-	return int(float32(c.MaxRecvMsgSize) * 0.9)
+	return int(float32(c.MaxMsgSize) * 0.9)
 }
 
 // WithDefaultsApplied applies default configuration values to unconfigured properties.
 func (c *GRPCServiceConfig) WithDefaultsApplied() *GRPCServiceConfig {
-	if c.MaxRecvMsgSize == 0 {
-		c.MaxRecvMsgSize = DefaultMaxRecvMsgSize
+	if c.MaxMsgSize == 0 {
+		c.MaxMsgSize = DefaultMaxMsgSize
 	}
 	if c.GracefulStopTimeoutMillis == 0 {
 		c.GracefulStopTimeoutMillis = DefaultGracefulStopTimeoutMillis
@@ -134,7 +134,7 @@ func (s *grpcSvc) Start(serverCtx *WorkContext) {
 		}
 
 		grpcServerOptions := []grpc.ServerOption{
-			grpc.MaxRecvMsgSize(s.config.MaxRecvMsgSize),
+			grpc.MaxMsgSize(s.config.MaxMsgSize),
 		}
 
 		if s.config.TLSConfigServer == nil {

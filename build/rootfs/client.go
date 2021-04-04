@@ -52,15 +52,10 @@ type GRPCClientConfig struct {
 	MaxRecvMsgSize int
 }
 
-// SafeClientMaxRecvMsgSize returns the maximum safe payload size to send by the client.
-func (c *GRPCClientConfig) SafeClientMaxRecvMsgSize() int {
-	return int(float32(c.MaxRecvMsgSize) * 0.9)
-}
-
 // WithDefaultsApplied applies default configuration values to unconfigured properties.
 func (c *GRPCClientConfig) WithDefaultsApplied() *GRPCClientConfig {
 	if c.MaxRecvMsgSize == 0 {
-		c.MaxRecvMsgSize = DefaultMaxRecvMsgSize
+		c.MaxRecvMsgSize = DefaultMaxMsgSize
 	}
 	return c
 }
@@ -69,7 +64,7 @@ func (c *GRPCClientConfig) WithDefaultsApplied() *GRPCClientConfig {
 func NewClient(logger hclog.Logger, cfg *GRPCClientConfig) (ClientProvider, error) {
 	cfg = cfg.WithDefaultsApplied()
 	grpcConn, err := grpc.Dial(cfg.HostPort,
-		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(cfg.SafeClientMaxRecvMsgSize())),
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(cfg.MaxRecvMsgSize)),
 		grpc.WithTransportCredentials(credentials.NewTLS(cfg.TLSConfig)))
 
 	if err != nil {

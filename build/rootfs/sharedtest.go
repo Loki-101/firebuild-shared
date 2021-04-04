@@ -1,9 +1,17 @@
 package rootfs
 
 import (
+	"io"
+	"io/fs"
+	"io/ioutil"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/combust-labs/firebuild-shared/build/commands"
+	"github.com/combust-labs/firebuild-shared/build/resources"
 	"github.com/hashicorp/go-hclog"
+	"github.com/stretchr/testify/assert"
 )
 
 // TestServer wraps an instance of a server and provides testing
@@ -178,9 +186,8 @@ func MustStartTestGRPCServer(t *testing.T, logger hclog.Logger, buildCtx *WorkCo
 	}
 
 	clientConfig := &GRPCClientConfig{
-		HostPort:       grpcConfig.BindHostPort,
-		TLSConfig:      grpcConfig.TLSConfigClient,
-		MaxRecvMsgSize: grpcConfig.MaxRecvMsgSize,
+		HostPort:  grpcConfig.BindHostPort,
+		TLSConfig: grpcConfig.TLSConfigClient,
 	}
 
 	testClient, clientErr := NewClient(logger.Named("grpc-client"), clientConfig)
@@ -189,4 +196,78 @@ func MustStartTestGRPCServer(t *testing.T, logger hclog.Logger, buildCtx *WorkCo
 		t.Fatal("expected the GRPC client, got error", clientErr)
 	}
 	return testServer, testClient, func() { testServer.Stop() }
+}
+
+// MustPutTestResource writes a test resource with a content under path.
+// Creates intermediate directories and fails on any error.
+func MustPutTestResource(t *testing.T, path string, contents []byte) {
+	if err := os.MkdirAll(filepath.Dir(path), fs.ModePerm); err != nil {
+		t.Fatal("failed creating parent directory for the resource, got error", err)
+	}
+	if err := ioutil.WriteFile(path, contents, fs.ModePerm); err != nil {
+		t.Fatal("expected resource to be written, got error", err)
+	}
+}
+
+// MustReadFromReader attempts reading from an input reader regardless of prior errors.
+func MustReadFromReader(reader io.ReadCloser, _ error) ([]byte, error) {
+	return ioutil.ReadAll(reader)
+}
+
+// MustBeAddCommand expects the next command from the client to be an ADD command.
+func MustBeAddCommand(t *testing.T, testClient ClientProvider, expectedContents ...[]byte) {
+	if addCommand, ok := testClient.NextCommand().(commands.Add); !ok {
+		t.Fatal("expected ADD command")
+	} else {
+		MustReadResources(t, testClient, addCommand.Source, expectedContents...)
+
+	}
+}
+
+// MustBeCopyCommand expects the next command from the client to be a COPY command.
+func MustBeCopyCommand(t *testing.T, testClient ClientProvider, expectedContents ...[]byte) {
+	if copyCommand, ok := testClient.NextCommand().(commands.Copy); !ok {
+		t.Fatal("expected COPY command")
+	} else {
+		MustReadResources(t, testClient, copyCommand.Source, expectedContents...)
+	}
+}
+
+// MustReadResources reads the resource from the client under the given path and compares the data with expected value.
+func MustReadResources(t *testing.T, testClient ClientProvider, source string, expectedContents ...[]byte) {
+	resourceChannel, err := testClient.Resource(source)
+	if err != nil {
+		t.Fatal("expected resource channel for COPY command, got error", err)
+	}
+
+	idx := 0
+out:
+	for {
+		select {
+		case item := <-resourceChannel:
+			switch titem := item.(type) {
+			case nil:
+				break out // break out on nil
+			case resources.ResolvedResource:
+				resourceData, err := MustReadFromReader(titem.Contents())
+				if err != nil {
+					t.Fatal("expected resource to read, got error", err)
+				}
+				assert.Equal(t, expectedContents[idx], resourceData)
+				idx = idx + 1
+			case error:
+				t.Fatal("received an error while reading ADD resource", titem)
+			}
+		}
+	}
+
+	assert.Equal(t, len(expectedContents), idx, "expected count of contents did not match count of resources read")
+
+}
+
+// MustBeRunCommand expects the next command from the client to be a RUN command.
+func MustBeRunCommand(t *testing.T, testClient ClientProvider) {
+	if _, ok := testClient.NextCommand().(commands.Run); !ok {
+		t.Fatal("expected RUN command")
+	}
 }
