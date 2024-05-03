@@ -1,9 +1,9 @@
 module github.com/combust-labs/firebuild-shared
 
-go 1.16
+go 1.21.9
 
 require (
-	github.com/combust-labs/firebuild-embedded-ca v0.0.2
+	github.com/Loki-101/firebuild-embedded-ca v0.0.2
 	github.com/gofrs/uuid v4.0.0+incompatible
 	github.com/hashicorp/go-hclog v0.15.0
 	github.com/mitchellh/mapstructure v1.4.1
