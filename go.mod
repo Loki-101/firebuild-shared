@@ -1,4 +1,4 @@
-module github.com/combust-labs/firebuild-shared
+module github.com/Loki-101/firebuild-shared
 
 go 1.21.9
 
